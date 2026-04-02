@@ -1,4 +1,3 @@
-import React from 'react'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
 import { useToasts } from '../contexts/ToastContext'

@@ -40,8 +40,8 @@ export function Navbar() {
             <CalendarClock className="h-5 w-5" />
           </div>
           <div className="leading-tight">
-            <div className="text-base font-bold text-slate-900 tracking-tight">DDMS</div>
-            <div className="text-xs text-slate-500 font-medium">Document deadlines</div>
+            <div className="text-base font-bold text-slate-900 tracking-tight">Insurance Manager</div>
+            <div className="text-xs text-slate-500 font-medium">Client & policy tracking</div>
           </div>
         </div>
 

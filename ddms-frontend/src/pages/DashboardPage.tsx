@@ -1,230 +1,266 @@
-import { useMemo, useState } from 'react'
-import { format, isAfter, isBefore, parseISO } from 'date-fns'
-import { CalendarDays, Filter, Search } from 'lucide-react'
-import { CalendarView } from '../components/CalendarView'
-import { DocumentTable } from '../components/DocumentTable'
+import { useMemo, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { format } from 'date-fns'
+import { CalendarCheck2, Cake, UserPlus, Users, FileText, ChevronRight } from 'lucide-react'
 import { Card, CardBody, CardHeader } from '../components/ui/Card'
-import { Input } from '../components/ui/Input'
-import { Skeleton } from '../components/ui/Skeleton'
-import { useDocuments } from '../contexts/DocumentsContext'
-import { useToasts } from '../contexts/ToastContext'
-import type { DocumentStatus } from '../types/document'
-import { getStatus, isOverdue, isUpcoming } from '../utils/date'
-
-type StatusFilter = 'All' | DocumentStatus
+import { useInsurance } from '../contexts/InsuranceContext'
+import { isInNextNDaysISO, isOverdueISO } from '../utils/insuranceDates'
+import { getNextOccurrenceDate, isMonthDayWithinNextNDaysISO } from '../utils/reminders'
 
 export function DashboardPage() {
-  const { documents, markCompleted } = useDocuments()
-  const { pushToast } = useToasts()
+  const { companies, customers, policies, leads } = useInsurance()
 
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState<StatusFilter>('All')
-  const [from, setFrom] = useState<string>('') // YYYY-MM-DD
-  const [to, setTo] = useState<string>('') // YYYY-MM-DD
-  const [isLoading] = useState(false) // placeholder to show skeleton pattern
+  const openLeads = useMemo(() => leads.filter((l) => l.status === 'open'), [leads])
+  const leadsFollowUpSoon = useMemo(
+    () => openLeads.filter((l) => isInNextNDaysISO(l.followUpDateISO, 15)).sort((a, b) => a.followUpDateISO.localeCompare(b.followUpDateISO)),
+    [openLeads],
+  )
 
-  const upcoming = useMemo(() => documents.filter(isUpcoming), [documents])
-  const overdue = useMemo(() => documents.filter(isOverdue), [documents])
+  const policiesDue15 = useMemo(
+    () => [...policies].filter((p) => isInNextNDaysISO(p.dueDateISO, 15)).sort((a, b) => a.dueDateISO.localeCompare(b.dueDateISO)),
+    [policies],
+  )
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const fromDate = from ? parseISO(from) : null
-    const toDate = to ? parseISO(to) : null
+  const upcomingRenewals30 = useMemo(
+    () => [...policies].filter((p) => isInNextNDaysISO(p.dueDateISO, 30)).sort((a, b) => a.dueDateISO.localeCompare(b.dueDateISO)),
+    [policies],
+  )
 
-    return documents.filter((d) => {
-      if (q && !d.name.toLowerCase().includes(q) && !d.id.toLowerCase().includes(q)) return false
+  const overdueRenewals = useMemo(
+    () => [...policies].filter((p) => isOverdueISO(p.dueDateISO)).sort((a, b) => a.dueDateISO.localeCompare(b.dueDateISO)),
+    [policies],
+  )
 
-      const s = getStatus(d)
-      if (status !== 'All' && s !== status) return false
+  const customersById = useMemo(() => new Map(customers.map((c) => [c.id, c.fullName])), [customers])
 
-      const deadline = parseISO(d.deadlineISO)
-      if (fromDate && isBefore(deadline, fromDate)) return false
-      if (toDate && isAfter(deadline, toDate)) return false
+  const birthdays = useMemo(
+    () =>
+      customers
+        .filter((c) => isMonthDayWithinNextNDaysISO(c.dateOfBirthISO, 30))
+        .map((c) => ({ customerId: c.id, fullName: c.fullName, nextDate: getNextOccurrenceDate(c.dateOfBirthISO) }))
+        .filter((x) => x.nextDate)
+        .sort((a, b) => (a.nextDate as Date).getTime() - (b.nextDate as Date).getTime()),
+    [customers],
+  )
 
-      return true
-    })
-  }, [documents, from, search, status, to])
+  const anniversaries = useMemo(
+    () =>
+      customers
+        .filter((c) => isMonthDayWithinNextNDaysISO(c.anniversaryDateISO, 30))
+        .map((c) => ({ customerId: c.id, fullName: c.fullName, nextDate: getNextOccurrenceDate(c.anniversaryDateISO) }))
+        .filter((x) => x.nextDate)
+        .sort((a, b) => (a.nextDate as Date).getTime() - (b.nextDate as Date).getTime()),
+    [customers],
+  )
+
+  const statCard = (props: {
+    title: string
+    count: number
+    subtitle: string
+    to: string
+    icon: ReactNode
+    accent: string
+  }) => (
+    <Link
+      to={props.to}
+      className="group block rounded-2xl bg-[color:var(--card)] p-5 ring-1 ring-[color:var(--border)] transition hover:ring-2 hover:ring-[color:var(--ring)]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div
+          className={`flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-sm ${props.accent}`}
+        >
+          {props.icon}
+        </div>
+        <ChevronRight className="h-5 w-5 shrink-0 text-[color:var(--muted-fg)] opacity-0 transition group-hover:opacity-100" />
+      </div>
+      <div className="mt-4 text-3xl font-bold tabular-nums tracking-tight text-[color:var(--fg)]">{props.count}</div>
+      <div className="mt-1 text-sm font-semibold text-[color:var(--fg)]">{props.title}</div>
+      <div className="mt-1 text-xs text-[color:var(--muted-fg)]">{props.subtitle}</div>
+    </Link>
+  )
 
   return (
-    <div className="space-y-6 ddms-animate-fade-up">
+    <div className="ddms-animate-fade-up min-w-0 max-w-full space-y-8 overflow-x-hidden">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
-          <div className="mt-1 text-sm text-slate-600">
-            Review deadlines, filter results, and visualize due dates on the calendar.
-          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-[color:var(--fg)]">Dashboard</h1>
+          <p className="mt-1 max-w-xl text-sm text-[color:var(--muted-fg)]">
+            Customers, policies, and leads in one place — with renewal and follow-up visibility.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
-            <div className="text-[11px] font-semibold text-slate-500">Upcoming</div>
-            <div className="mt-0.5 text-sm font-semibold text-slate-900">{upcoming.length}</div>
-          </div>
-          <div className="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
-            <div className="text-[11px] font-semibold text-slate-500">Overdue</div>
-            <div className="mt-0.5 text-sm font-semibold text-slate-900">{overdue.length}</div>
-          </div>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full bg-[color:var(--muted)] px-3 py-1.5 font-semibold text-[color:var(--fg)] ring-1 ring-[color:var(--border)]">
+            Companies: {companies.length}
+          </span>
         </div>
       </div>
 
+      <section aria-label="Overview counts">
+        <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-[color:var(--muted-fg)]">Overview</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {statCard({
+            title: 'Customers',
+            count: customers.length,
+            subtitle: 'Manage profiles & documents',
+            to: '/customers',
+            icon: <Users className="h-5 w-5" />,
+            accent: 'bg-gradient-to-br from-sky-500 to-blue-600',
+          })}
+          {statCard({
+            title: 'Policies',
+            count: policies.length,
+            subtitle: `${policiesDue15.length} due in 15 days • ${overdueRenewals.length} overdue`,
+            to: '/policies',
+            icon: <FileText className="h-5 w-5" />,
+            accent: 'bg-gradient-to-br from-emerald-500 to-teal-600',
+          })}
+          {statCard({
+            title: 'Leads',
+            count: openLeads.length,
+            subtitle: `${leadsFollowUpSoon.length} follow-ups in next 15 days`,
+            to: '/leads',
+            icon: <UserPlus className="h-5 w-5" />,
+            accent: 'bg-gradient-to-br from-violet-500 to-purple-600',
+          })}
+        </div>
+      </section>
+
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
+        <div className="space-y-6 lg:col-span-2">
+          <Card className="overflow-hidden border-0 shadow-lg shadow-slate-900/5 ring-1 ring-[color:var(--border)]">
             <CardHeader
-              title="Filters"
-              subtitle="Search, status, and date range"
-              right={
-                <div className="inline-flex items-center gap-2 text-xs text-slate-500">
-                  <Filter className="h-3.5 w-3.5" />
-                  Refine
-                </div>
-              }
+              title="Policies — due in 15 days"
+              subtitle="Closest renewals first."
+              right={<span className="text-xs font-semibold text-[color:var(--muted-fg)]">{policiesDue15.length}</span>}
             />
-            <CardBody className="grid gap-3 md:grid-cols-4">
-              <Input
-                placeholder="Search name or ID…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                leftIcon={<Search className="h-4 w-4" />}
-              />
-              <div>
-                <select
-                  className="h-10 w-full rounded-lg bg-white px-3 text-sm text-slate-900 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400/40"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as StatusFilter)}
+            <CardBody className="space-y-2">
+              {policiesDue15.slice(0, 10).map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-start justify-between gap-3 rounded-xl bg-[color:var(--muted)] p-3 ring-1 ring-[color:var(--border)]"
                 >
-                  <option value="All">All statuses</option>
-                  <option value="Upcoming">Upcoming</option>
-                  <option value="Overdue">Overdue</option>
-                  <option value="Completed">Completed</option>
-                </select>
-              </div>
-              <div>
-                <input
-                  type="date"
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                  className="h-10 w-full rounded-lg bg-white px-3 text-sm text-slate-900 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400/40"
-                />
-                <div className="mt-1 text-[11px] text-slate-500">From</div>
-              </div>
-              <div>
-                <input
-                  type="date"
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="h-10 w-full rounded-lg bg-white px-3 text-sm text-slate-900 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400/40"
-                />
-                <div className="mt-1 text-[11px] text-slate-500">To</div>
-              </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-[color:var(--fg)]">{p.policyNumber}</div>
+                    <div className="mt-1 text-xs text-[color:var(--muted-fg)]">
+                      {customersById.get(p.customerId) ?? 'Customer'} • Due {p.dueDateISO}
+                    </div>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-1 text-[11px] font-bold text-amber-800 dark:text-amber-200">
+                    15d
+                  </span>
+                </div>
+              ))}
+              {policiesDue15.length === 0 ? (
+                <div className="text-sm text-[color:var(--muted-fg)]">No policies due in the next 15 days.</div>
+              ) : null}
             </CardBody>
           </Card>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader
-                title="Upcoming deadlines"
-                subtitle="Documents due soon"
-                right={<span className="text-xs text-slate-500">{upcoming.length}</span>}
-              />
-              <CardBody className="space-y-3">
-                {upcoming.slice(0, 4).map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex items-start justify-between gap-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-slate-900">{d.name}</div>
-                      <div className="mt-0.5 text-xs text-slate-500">
-                        Due {format(parseISO(d.deadlineISO), 'MMM d, yyyy')}
-                      </div>
-                    </div>
-                    <div className="text-xs text-amber-700 rounded-full bg-amber-50 ring-1 ring-amber-200 px-2 py-1">
-                      Upcoming
-                    </div>
+          <Card className="overflow-hidden border-0 shadow-lg shadow-slate-900/5 ring-1 ring-[color:var(--border)]">
+            <CardHeader
+              title="Policies — next 30 days & overdue"
+              subtitle="Broader renewal window plus past-due items."
+              right={
+                <span className="text-xs font-semibold text-[color:var(--muted-fg)]">
+                  {upcomingRenewals30.length} / {overdueRenewals.length}
+                </span>
+              }
+            />
+            <CardBody className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-xs font-bold uppercase tracking-wider text-[color:var(--muted-fg)]">Upcoming (30d)</div>
+                {upcomingRenewals30.slice(0, 5).map((p) => (
+                  <div key={p.id} className="rounded-lg bg-[color:var(--muted)] p-2 text-xs ring-1 ring-[color:var(--border)]">
+                    <div className="font-semibold text-[color:var(--fg)]">{p.policyNumber}</div>
+                    <div className="text-[color:var(--muted-fg)]">{p.dueDateISO}</div>
                   </div>
                 ))}
-                {upcoming.length === 0 ? (
-                  <div className="text-sm text-slate-600">No upcoming deadlines.</div>
+                {upcomingRenewals30.length === 0 ? (
+                  <div className="text-xs text-[color:var(--muted-fg)]">None in 30 days.</div>
                 ) : null}
-              </CardBody>
-            </Card>
-
-            <Card>
-              <CardHeader
-                title="Overdue deadlines"
-                subtitle="Needs attention"
-                right={<span className="text-xs text-slate-500">{overdue.length}</span>}
-              />
-              <CardBody className="space-y-3">
-                {overdue.slice(0, 4).map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex items-start justify-between gap-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-slate-900">{d.name}</div>
-                      <div className="mt-0.5 text-xs text-slate-500">
-                        Due {format(parseISO(d.deadlineISO), 'MMM d, yyyy')}
-                      </div>
-                    </div>
-                    <div className="text-xs text-red-700 rounded-full bg-red-50 ring-1 ring-red-200 px-2 py-1">
-                      Overdue
-                    </div>
-                  </div>
-                ))}
-                {overdue.length === 0 ? (
-                  <div className="text-sm text-slate-600">No overdue deadlines.</div>
-                ) : null}
-              </CardBody>
-            </Card>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-900">Documents</div>
-              <div className="text-xs text-slate-500">{filtered.length} result(s)</div>
-            </div>
-
-            {isLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-24 w-full" />
-                <Skeleton className="h-24 w-full" />
-                <Skeleton className="h-24 w-full" />
               </div>
-            ) : (
-              <DocumentTable
-                documents={filtered}
-                onToggleCompleted={(id, completed) => {
-                  markCompleted(id, completed)
-                  pushToast({
-                    kind: completed ? 'success' : 'info',
-                    title: completed ? 'Marked as completed' : 'Marked as not completed',
-                    message: `Document ${id} updated.`,
-                  })
-                }}
-              />
-            )}
-          </div>
+              <div className="space-y-2">
+                <div className="text-xs font-bold uppercase tracking-wider text-red-600/90">Overdue</div>
+                {overdueRenewals.slice(0, 5).map((p) => (
+                  <div key={p.id} className="rounded-lg bg-red-500/10 p-2 text-xs ring-1 ring-red-500/20">
+                    <div className="font-semibold text-[color:var(--fg)]">{p.policyNumber}</div>
+                    <div className="text-[color:var(--muted-fg)]">Was due {p.dueDateISO}</div>
+                  </div>
+                ))}
+                {overdueRenewals.length === 0 ? (
+                  <div className="text-xs text-[color:var(--muted-fg)]">No overdue policies.</div>
+                ) : null}
+              </div>
+            </CardBody>
+          </Card>
         </div>
 
         <div className="space-y-6">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <CalendarDays className="h-4 w-4" />
-            Calendar view
-          </div>
-          <CalendarView
-            documents={documents}
-            onDayClick={(iso) => {
-              // Quick filter helper: clicking a day sets the date range to that day.
-              setFrom(iso)
-              setTo(iso)
-              pushToast({ kind: 'info', title: 'Filtered by date', message: `Showing deadlines on ${iso}.` })
-            }}
-          />
+          <Card className="overflow-hidden border-0 shadow-lg shadow-slate-900/5 ring-1 ring-[color:var(--border)]">
+            <CardHeader
+              title="Leads — upcoming follow-ups"
+              subtitle="Next 15 days."
+              right={<span className="text-xs font-semibold text-[color:var(--muted-fg)]">{leadsFollowUpSoon.length}</span>}
+            />
+            <CardBody className="space-y-2">
+              {leadsFollowUpSoon.slice(0, 8).map((l) => (
+                <div
+                  key={l.id}
+                  className="flex items-start justify-between gap-2 rounded-xl bg-[color:var(--muted)] p-3 ring-1 ring-[color:var(--border)]"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-[color:var(--fg)]">{l.name}</div>
+                    <div className="mt-0.5 text-xs text-[color:var(--muted-fg)]">{l.interestedProduct}</div>
+                    <div className="mt-1 text-xs text-[color:var(--muted-fg)]">Follow-up: {l.followUpDateISO}</div>
+                  </div>
+                  <UserPlus className="h-4 w-4 shrink-0 text-violet-500" />
+                </div>
+              ))}
+              {leadsFollowUpSoon.length === 0 ? (
+                <div className="text-sm text-[color:var(--muted-fg)]">No lead follow-ups in the next 15 days.</div>
+              ) : null}
+              <Link
+                to="/leads"
+                className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-violet-600 hover:underline dark:text-violet-400"
+              >
+                Open leads <ChevronRight className="h-3 w-3" />
+              </Link>
+            </CardBody>
+          </Card>
+
+          <Card className="overflow-hidden border-0 shadow-lg shadow-slate-900/5 ring-1 ring-[color:var(--border)]">
+            <CardHeader title="Birthdays" subtitle="Next 30 days." right={<span className="text-xs text-[color:var(--muted-fg)]">{birthdays.length}</span>} />
+            <CardBody className="space-y-2">
+              {birthdays.slice(0, 6).map((b) => (
+                <div key={b.customerId} className="flex items-center justify-between gap-2 rounded-xl bg-[color:var(--muted)] p-3 ring-1 ring-[color:var(--border)]">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-[color:var(--fg)]">{b.fullName}</div>
+                    <div className="text-xs text-[color:var(--muted-fg)]">{b.nextDate ? format(b.nextDate as Date, 'MMM d') : ''}</div>
+                  </div>
+                  <Cake className="h-4 w-4 shrink-0 text-amber-500" />
+                </div>
+              ))}
+              {birthdays.length === 0 ? <div className="text-sm text-[color:var(--muted-fg)]">No birthdays soon.</div> : null}
+            </CardBody>
+          </Card>
+
+          <Card className="overflow-hidden border-0 shadow-lg shadow-slate-900/5 ring-1 ring-[color:var(--border)]">
+            <CardHeader title="Anniversaries" subtitle="Next 30 days." right={<span className="text-xs text-[color:var(--muted-fg)]">{anniversaries.length}</span>} />
+            <CardBody className="space-y-2">
+              {anniversaries.slice(0, 6).map((a) => (
+                <div key={a.customerId} className="flex items-center justify-between gap-2 rounded-xl bg-[color:var(--muted)] p-3 ring-1 ring-[color:var(--border)]">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-[color:var(--fg)]">{a.fullName}</div>
+                    <div className="text-xs text-[color:var(--muted-fg)]">{a.nextDate ? format(a.nextDate as Date, 'MMM d') : ''}</div>
+                  </div>
+                  <CalendarCheck2 className="h-4 w-4 shrink-0 text-rose-500" />
+                </div>
+              ))}
+              {anniversaries.length === 0 ? <div className="text-sm text-[color:var(--muted-fg)]">No anniversaries soon.</div> : null}
+            </CardBody>
+          </Card>
         </div>
       </div>
     </div>
   )
 }
-
-

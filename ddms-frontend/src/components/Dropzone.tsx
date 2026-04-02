@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { FileUp, Image as ImageIcon, FileText } from 'lucide-react'
 import { Button } from './ui/Button'

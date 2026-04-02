@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { addDays, format } from 'date-fns'
 import { CheckCircle2, Loader2 } from 'lucide-react'
 import { Dropzone } from '../components/Dropzone'
